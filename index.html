@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Duck World 8-Bit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+    <style>
+        /* =========================================
+           1. CORE CONFIGURATION
+           ========================================= */
+        :root {
+            /* Palette */
+            --bg-overlay: rgba(10, 10, 20, 0.85);
+            --box-bg: #000000;
+            --box-border: #ffffff;
+            
+            /* Typography Colors */
+            --text-main: #e0e0e0;
+            --text-terminal: #33ff33; /* Hacker Green */
+            --text-accent: #ffcc00;   /* Arcade Coin Yellow */
+            --error-color: #ff3333;   /* 8-bit Red */
+            
+            /* Visual Effects */
+            --pixel-shadow: 4px 4px 0px rgba(0, 0, 0, 0.6);
+            --crt-scanline: rgba(18, 16, 16, 0.1);
+            
+            /* Animation Timing */
+            --anim-speed: 0.3s;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'VT323', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            color: var(--text-main);
+            background-color: #2b2b2b;
+            
+            /* Background Configuration */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+        }
+
+        /* Responsive Backgrounds */
+        @media (min-width: 769px) {
+            body { background-image: url('Desktop.png'); }
+        }
+        @media (max-width: 768px) {
+            body { 
+                background-image: url('Smartphone.png');
+                background-attachment: fixed; /* Prevents mobile scroll gaps */
+            }
+        }
+
+        /* =========================================
+           2. ATMOSPHERE & OVERLAYS
+           ========================================= */
+        
+        /* CRT Scanlines */
+        body::after {
+            content: " ";
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 999;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            animation: crtFlicker 0.15s infinite;
+        }
+
+        /* Vignette */
+        #vignette-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 2;
+            background: radial-gradient(circle at 50% 50%, transparent 50%, rgba(0,0,0,0.8) 100%);
+        }
+
+        /* Particles Container */
+        #ambient-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 3;
+            overflow: hidden;
+        }
+
+        .light-particle {
+            position: absolute;
+            background: var(--text-terminal);
+            width: 4px; height: 4px;
+            box-shadow: 0 0 4px var(--text-terminal);
+            animation: floatParticle 15s infinite steps(8); /* Retro step animation */
+        }
+
+        /* =========================================
+           3. UI COMPONENTS
+           ========================================= */
+        
+        /* Mute Button (Top Left) */
+        #mute-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: var(--box-bg);
+            border: 2px solid var(--box-border);
+            color: var(--text-accent);
+            padding: 8px 12px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8rem;
+            cursor: pointer;
+            box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+            touch-action: manipulation;
+        }
+        #mute-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+
+        /* Main Container */
+        .glass-box {
+            position: absolute;
+            z-index: 10;
+            background: var(--box-bg);
+            border: 4px solid var(--box-border);
+            outline: 4px solid var(--box-bg);
+            box-shadow: 10px 10px 0px rgba(0,0,0,0.6);
+            padding: 30px;
+            text-align: center;
+            max-width: 450px;
+            width: 85%;
+            opacity: 0;
+            transform: scale(0.9) translateY(20px);
+            transition: opacity 0.3s, transform 0.3s steps(5);
+            pointer-events: none;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .glass-box.active {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: all;
+        }
+
+        /* Typography */
+        h2 {
+            font-family: 'Press Start 2P', cursive;
+            color: var(--text-accent);
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            line-height: 1.6;
+            text-transform: uppercase;
+            text-shadow: 4px 4px 0px #000;
+        }
+        
+        .subtitle-box {
+            color: var(--text-terminal);
+            margin-bottom: 30px;
+            font-size: 1.4rem;
+            min-height: 3rem;
+            white-space: pre-line;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Typewriter Cursor (Fixed) */
+        .cursor-blink {
+            display: inline-block;
+            font-family: 'VT323', monospace;
+            color: var(--text-terminal);
+            animation: blink 1s steps(2) infinite;
+            margin-left: 2px;
+        }
+
+        /* Inputs & Buttons */
+        .input-wrapper { width: 100%; margin-bottom: 20px; }
+
+        .password-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid var(--text-main);
+            background: #222;
+            outline: none;
+            font-size: 1.5rem;
+            color: var(--text-terminal);
+            text-align: center;
+            font-family: 'VT323', monospace;
+            text-transform: uppercase;
+            box-shadow: inset 4px 4px 0px #000;
+        }
+
+        .password-input:focus {
+            border-color: var(--text-accent);
+            background: #000;
+            animation: glowPulse 2s infinite;
+        }
+
+        .unlock-btn, .action-btn {
+            background: var(--text-accent);
+            border: 2px solid #fff;
+            padding: 15px 20px;
+            width: 100%;
+            color: #000;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8rem;
+            cursor: pointer;
+            box-shadow: 4px 4px 0px #000;
+            text-transform: uppercase;
+            transition: transform 0.1s;
+            touch-action: manipulation;
+        }
+        
+        .unlock-btn:hover, .action-btn:hover { 
+            transform: translate(-2px, -2px);
+            background: #fff;
+            box-shadow: 6px 6px 0px #000;
+        }
+        
+        .unlock-btn:active, .action-btn:active { 
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0px #000;
+        }
+
+        /* Back Button */
+        #back-btn {
+            margin-bottom: 20px;
+            background: #222;
+            color: var(--text-main);
+            border: 2px solid var(--text-main);
+            padding: 10px;
+            font-size: 0.7rem;
+        }
+        #back-btn:hover { background: var(--text-main); color: #000; }
+
+        .error-msg-box {
+            min-height: 24px;
+            color: var(--error-color);
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7rem;
+            margin-bottom: 15px;
+            opacity: 0;
+            text-shadow: 2px 2px 0 #000;
+        }
+        .error-msg-box.show { opacity: 1; animation: shake 0.3s steps(3); }
+
+        /* Secret Message Popup */
+        #secret-msg {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: #000;
+            border: 4px solid var(--error-color);
+            padding: 20px;
+            z-index: 2000;
+            font-family: 'Press Start 2P', cursive;
+            color: var(--error-color);
+            text-align: center;
+            box-shadow: 0 0 0 100vw rgba(0,0,0,0.8);
+        }
+
+        /* =========================================
+           4. MENU & CONTENT SECTIONS
+           ========================================= */
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+
+        @media (max-width: 480px) {
+            .menu-grid { grid-template-columns: 1fr; }
+        }
+
+        .menu-card {
+            background: #222;
+            border: 2px solid var(--text-main);
+            padding: 15px 5px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 4px 4px 0px #000;
+            transition: transform 0.1s;
+            touch-action: manipulation;
+        }
+
+        .menu-card:hover { background: var(--text-main); transform: translateY(-2px); }
+        .menu-card:hover .menu-icon, .menu-card:hover .menu-label { filter: invert(1); }
+
+        .menu-card.active {
+            background: var(--text-accent);
+            border-color: #fff;
+            transform: translate(2px, 2px);
+            box-shadow: none;
+        }
+        .menu-card.active .menu-icon, .menu-card.active .menu-label { color: #000; filter: none; }
+
+        .menu-icon { font-size: 2rem; }
+        .menu-label { font-family: 'Press Start 2P', cursive; font-size: 0.55rem; line-height: 1.5; }
+
+        .content-section { display: none; opacity: 0; }
+        .content-section.visible { display: block; opacity: 1; animation: slideIn 0.3s steps(5); }
+
+        h2.section-title {
+            font-size: 1rem;
+            color: var(--text-accent);
+            border-bottom: 2px dashed var(--text-accent);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        /* Letter Style */
+        .letter-paper {
+            background: #111;
+            color: var(--text-terminal);
+            padding: 15px;
+            border: 2px solid var(--text-terminal);
+            font-size: 1.2rem;
+            line-height: 1.4;
+            text-align: left;
+            box-shadow: inset 0 0 20px rgba(51, 255, 51, 0.1);
+            max-height: 250px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--text-terminal) #000;
+        }
+
+        /* Video Style */
+        .video-box {
+            background: #000;
+            width: 100%;
+            height: 200px;
+            border: 4px solid #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            color: white;
+            box-shadow: 6px 6px 0px rgba(0,0,0,0.5);
+        }
+        .play-btn {
+            width: 0; height: 0;
+            border-top: 20px solid transparent;
+            border-bottom: 20px solid transparent;
+            border-left: 35px solid var(--text-accent);
+            cursor: pointer;
+            filter: drop-shadow(4px 4px 0px #000);
+            transition: transform 0.1s;
+        }
+        .play-btn:hover { transform: scale(1.2); border-left-color: #fff; }
+
+        /* Quiz Style */
+        .quiz-container { text-align: left; }
+        .quiz-question { 
+            font-family: 'VT323', monospace; 
+            font-size: 1.4rem; 
+            margin-bottom: 15px; 
+            color: #fff; 
+            text-transform: uppercase; 
+        }
+        .quiz-opt {
+            background: #000;
+            border: 2px solid #555;
+            padding: 10px 15px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            font-family: 'VT323', monospace;
+            font-size: 1.2rem;
+            color: #aaa;
+            position: relative;
+            box-shadow: 2px 2px 0px #000;
+            touch-action: manipulation;
+        }
+        .quiz-opt:hover { 
+            background: #222; border-color: var(--text-accent); color: var(--text-accent); padding-left: 25px; 
+        }
+        .quiz-opt:hover::before {
+            content: "▶";
+            position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 0.8em;
+        }
+
+        /* =========================================
+           5. ANIMATIONS
+           ========================================= */
+        .fade-up { opacity: 0; transform: translateY(15px); animation: staggerFade 0.4s steps(5) forwards; }
+        @keyframes staggerFade { to { opacity: 1; transform: translateY(0); } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes crtFlicker { 0% { opacity: 0.95; } 50% { opacity: 0.92; } 100% { opacity: 0.96; } }
+        @keyframes floatParticle { 
+            0% { transform: translate(0, 110vh); opacity: 0; } 
+            10%, 90% { opacity: 1; } 
+            100% { transform: translate(0, -10vh); opacity: 0; } 
+        }
+        @keyframes shake { 
+            0%, 100% { transform: translateX(0); } 
+            25% { transform: translateX(-8px); } 
+            75% { transform: translateX(8px); } 
+        }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes glowPulse { 
+            0%, 100% { box-shadow: 0 0 5px var(--text-accent); } 
+            50% { box-shadow: 0 0 15px var(--text-accent); } 
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="vignette-layer"></div>
+    <div id="ambient-layer"></div>
+
+    <button id="mute-btn">🔊</button>
+
+    <div id="secret-msg">BOMB ACTIVATED!<br>60 SECOND TIMEDOWN STARTING NOW...</div>
+
+    <audio id="audio-bg" preload="auto" loop>
+        <source src="Background.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="audio-unlock" preload="auto">
+        <source src="freesound_community-075176_duck-quack-40345.mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="lock-screen" class="glass-box active">
+        <h2 id="type-title"></h2>
+        <div id="type-subtitle" class="subtitle-box"></div>
+        
+        <div class="input-wrapper">
+            <input type="password" id="password" class="password-input" placeholder="PASSWORD..." autocomplete="off">
+        </div>
+        
+        <div id="error-msg" class="error-msg-box"></div>
+
+        <button id="unlock-btn" class="unlock-btn">PRESS HERE</button>
+    </div>
+
+    <div id="main-content" class="glass-box">
+        
+        <button id="back-btn" class="action-btn">BACK TO TITLE</button>
+
+        <div class="menu-grid">
+            <div class="menu-card" data-target="letter">
+                <div class="menu-icon">💌</div>
+                <div class="menu-label">DONT OPEN ME</div>
+            </div>
+            <div class="menu-card" data-target="play">
+                <div class="menu-icon">🎬</div>
+                <div class="menu-label">VIDEO</div>
+            </div>
+            <div class="menu-card" data-target="quiz">
+                <div class="menu-icon">🧠</div>
+                <div class="menu-label"> VERY HARD QUIZ</div>
+            </div>
+        </div>
+
+        <hr style="border:0; height:2px; background:#fff; margin-bottom:30px; border-bottom: 2px dashed #555;">
+
+        <div id="section-letter" class="content-section">
+            <h2 class="section-title">DONT OPEN ME</h2>
+            <div class="letter-paper">
+                <p>> OMG A SECRET MESSAGE...</p>
+                <br>
+                <p><strong>To my very smol pipini,</strong></p>
+                <br>
+                <p>I hope you know how much i care for u, i always try my best.</p>
+                <br>
+                <p>And my best is what u get because u deserve nothin less.</p>
+                <br>
+                <p>I love u to the max level :]</p>
+                <br>
+                <p style="text-align:right; font-weight:bold;">- Ur papia ❤️</p>
+            </div>
+        </div>
+
+        <div id="section-play" class="content-section">
+            <h2 class="section-title">VIDEO</h2>
+            <div class="video-box">
+                <div class="play-btn"></div>
+                <p style="position:absolute; bottom:20px; font-family:'Press Start 2P'; font-size:0.6rem; color:#ccc;">INSERT TAPE...</p>
+            </div>
+            <p style="margin-top:20px; font-size:1.2rem; color:var(--text-terminal);">An anonymous video from someone...</p>
+        </div>
+
+        <div id="section-quiz" class="content-section">
+            <h2 class="section-title">VERY HARD QUIZ</h2>
+            <div id="quiz-wrapper">
+                <div id="quiz-q-container" class="quiz-container">
+                    <p id="q-text" class="quiz-question"></p>
+                    <div id="q-options" class="quiz-options"></div>
+                </div>
+                <p id="quiz-status" style="margin-top:20px; font-size:1.2rem; color:#888; font-family:'VT323';"></p>
+            </div>
+            <div id="quiz-result" style="display:none;">
+                <h3 id="final-score-title" style="margin-bottom:15px; color:var(--text-accent); font-family:'Press Start 2P'; font-size:1rem; line-height:1.5;"></h3>
+                <p id="final-score-msg" style="margin-bottom:25px; color:#fff; font-size:1.4rem;"></p>
+                <button id="retry-btn" class="action-btn">RETRY QUIZ</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        /**
+         * DUCK WORLD ENGINE (Final Refactored)
+         * - Fixed Quiz Scoring & Result Logic
+         * - Fixed Random Error Repetition
+         * - Fixed Smartphone Compatibility
+         */
+        const DuckWorld = (() => {
+            
+            /* =========================================
+            1. CONFIGURATION & STATE
+            ========================================= */
+            const config = {
+        password: "%CF%80%CE%B9%CF%80%CE%B9%CE%BD%CE%B9",
+        typewriter: {
+            title: "HELLO SMOL PIPINI",
+            subtitle: "ENTER THE SECRET WORD NOW PLEASE :)"
+        },
+        isMobile: window.matchMedia("(max-width: 768px)").matches,
+        maxVolume: 0.12 
+    };
+
+    const state = {
+        quizCurrent: 0,
+        quizScore: 0,
+        audioInitialized: false,
+        isMuted: false,
+        spamCount: 0,
+        lastErrorIndex: -1
+            };
+
+        const els = {
+        lockScreen: document.getElementById('lock-screen'),
+        mainContent: document.getElementById('main-content'),
+        passwordInput: document.getElementById('password'),
+        unlockBtn: document.getElementById('unlock-btn'),
+        backBtn: document.getElementById('back-btn'),
+        muteBtn: document.getElementById('mute-btn'),
+        errorMsg: document.getElementById('error-msg'),
+        secretMsg: document.getElementById('secret-msg'),
+        ambientLayer: document.getElementById('ambient-layer'),
+        menuCards: document.querySelectorAll('.menu-card'),
+        sections: document.querySelectorAll('.content-section'),
+        audioBg: document.getElementById('audio-bg'),
+        audioUnlock: document.getElementById('audio-unlock'),
+        retryBtn: document.getElementById('retry-btn')
+            };
+
+            const quizData = [
+        { q: "Where did we first meet?", options: ["Pauliani", "Las Ramblas", "Instagram"], correct: 2 },
+        { q: "My favorite food?", options: ["Tortelinia", "Pizza", "Gigantes"], correct: 1 },
+        { q: "Who is better?", options: ["Me", "You", "Nobody"], correct: 1 },
+        { q: "My favorite song?", options: ["All The Stars", "Overflow", "Heavydirtysoul"], correct: 1 },
+        { q: "Love Level?", options: ["Level 1", "Infinite", "Over 9000"], correct: 2 }
+            ];
+
+            const errorMessages = [
+        "OMGGGG U SMOL!!!",
+        "ARE U OK PIPINI?",
+        "WRONG AGAIN WTF!",
+        "YOU ARE BETTER THAN THIS PIPINI!!",
+        "YOU DONT DESERVE MY DUCKNESS...",
+        "ERROR 404: LOVE NOT FOUND"
+    ];
+
+            /* =========================================
+               2. AUDIO CONTROLLER
+               ========================================= */
+            const AudioController = {
+                init: () => {
+                    AudioController.playBg();
+                    
+                    if (!state.audioInitialized) {
+                        const unlockAudio = () => {
+                            AudioController.playBg();
+                            document.removeEventListener('click', unlockAudio);
+                            document.removeEventListener('keydown', unlockAudio);
+                        };
+                        document.addEventListener('click', unlockAudio);
+                        document.addEventListener('keydown', unlockAudio);
+                    }
+                },
+
+                playBg: () => {
+                    if (state.audioInitialized) return;
+                    
+                    els.audioBg.volume = 0;
+                    if(state.isMuted) els.audioBg.muted = true;
+
+                    const playPromise = els.audioBg.play();
+
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            state.audioInitialized = true;
+                            if(!state.isMuted) AudioController.fadeIn(els.audioBg, config.maxVolume);
+                        }).catch(error => {
+                            console.log("Autoplay prevented.");
+                        });
+                    }
+                },
+
+                fadeIn: (audio, targetVol) => {
+                    let vol = 0;
+                    const fade = setInterval(() => {
+                        if(state.isMuted) { clearInterval(fade); return; }
+                        
+                        if (vol < targetVol) {
+                            vol += 0.01;
+                            audio.volume = Math.min(vol, targetVol);
+                        } else {
+                            clearInterval(fade);
+                        }
+                    }, 50);
+                },
+
+                playUnlock: () => {
+                    if(state.isMuted) return;
+                    els.audioUnlock.volume = 0.4;
+                    els.audioUnlock.currentTime = 0;
+                    els.audioUnlock.play().catch(() => {});
+                },
+
+                toggleMute: () => {
+                    state.isMuted = !state.isMuted;
+                    
+                    if(state.isMuted) {
+                        els.audioBg.muted = true;
+                        els.muteBtn.textContent = "🔇";
+                    } else {
+                        els.audioBg.muted = false;
+                        els.audioBg.volume = config.maxVolume; 
+                        els.muteBtn.textContent = "🔊";
+                        if(!state.audioInitialized) AudioController.init();
+                    }
+                }
+            };
+
+            /* =========================================
+               3. VISUAL FX MODULE
+               ========================================= */
+            const VisualFX = {
+                init: () => {
+                    VisualFX.spawnParticles();
+                    if (!config.isMobile) VisualFX.initParallax();
+                    VisualFX.runTypewriter();
+                },
+
+                spawnParticles: () => {
+                    const count = config.isMobile ? 5 : 15;
+                    els.ambientLayer.innerHTML = ''; 
+                    
+                    for(let i=0; i < count; i++) {
+                        let p = document.createElement('div');
+                        p.className = 'light-particle';
+                        p.style.left = Math.random() * 100 + '%';
+                        const size = (Math.random() * 4 + 2) + 'px';
+                        p.style.width = p.style.height = size;
+                        p.style.animationDelay = (Math.random() * 5) + 's';
+                        p.style.animationDuration = (Math.random() * 10 + 15) + 's';
+                        els.ambientLayer.appendChild(p);
+                    }
+                },
+
+                initParallax: () => {
+                    let mouseX = 0, mouseY = 0;
+                    let currentX = 0, currentY = 0;
+
+                    document.addEventListener('mousemove', (e) => {
+                        mouseX = (e.clientX / window.innerWidth - 0.5) * 5; 
+                        mouseY = (e.clientY / window.innerHeight - 0.5) * 5;
+                    });
+
+                    const loop = () => {
+                        currentX += (mouseX - currentX) * 0.02;
+                        currentY += (mouseY - currentY) * 0.02;
+                        els.ambientLayer.style.transform = `translate(${currentX}px, ${currentY}px)`;
+                        requestAnimationFrame(loop);
+                    };
+                    loop();
+                },
+
+                runTypewriter: () => {
+                    const type = (id, text, delay) => {
+                        setTimeout(() => {
+                            const el = document.getElementById(id);
+                            if(!el) return;
+                            el.innerHTML = "";
+                            let i = 0;
+                            
+                            const step = () => {
+                                if (i < text.length) {
+                                    el.textContent = text.substring(0, i + 1);
+                                    const cursor = document.createElement('span');
+                                    cursor.className = 'cursor-blink';
+                                    cursor.textContent = "_"; 
+                                    el.appendChild(cursor);
+                                    i++;
+                                    setTimeout(step, 60); 
+                                } else {
+                                    const cursor = document.createElement('span');
+                                    cursor.className = 'cursor-blink';
+                                    cursor.textContent = "_"; 
+                                    el.appendChild(cursor);
+                                }
+                            };
+                            step();
+                        }, delay);
+                    };
+
+                    type('type-title', config.typewriter.title, 500);
+                    type('type-subtitle', config.typewriter.subtitle, 2000);
+                },
+
+                staggerFade: (container) => {
+                    if(!container) return;
+                    Array.from(container.children).forEach((child, index) => {
+                        child.classList.remove('fade-up');
+                        void child.offsetWidth; 
+                        child.style.animationDelay = `${index * 0.1}s`;
+                        child.classList.add('fade-up');
+                    });
+                },
+
+                shakeLock: () => {
+                    els.lockScreen.classList.remove('shake-anim'); 
+                    void els.lockScreen.offsetWidth; 
+                    els.lockScreen.style.animation = 'shake 0.3s steps(4)';
+                    setTimeout(() => els.lockScreen.style.animation = '', 300);
+                },
+
+                showSecretSpam: () => {
+                    els.secretMsg.style.display = 'block';
+                    setTimeout(() => {
+                        els.secretMsg.style.display = 'none';
+                    }, 3000);
+                }
+            };
+
+            /* =========================================
+               4. QUIZ ENGINE (FIXED)
+               ========================================= */
+         /* =========================================
+   4. QUIZ ENGINE (STABLE + ISOLATED)
+   ========================================= */
+const QuizEngine = (() => {
+
+    const wrapper = document.getElementById('quiz-wrapper');
+    const result = document.getElementById('quiz-result');
+    const questionText = document.getElementById('q-text');
+    const optionsContainer = document.getElementById('q-options');
+    const status = document.getElementById('quiz-status');
+    const title = document.getElementById('final-score-title');
+    const msg = document.getElementById('final-score-msg');
+
+    function resetState() {
+        state.quizCurrent = 0;
+        state.quizScore = 0;
+        wrapper.style.display = 'block';
+        result.style.display = 'none';
+        optionsContainer.innerHTML = '';
+        status.textContent = '';
+    }
+
+    function start() {
+        resetState();
+        renderQuestion();
+    }
+
+    function renderQuestion() {
+        if (state.quizCurrent >= quizData.length) {
+            showResults();
+            return;
+        }
+
+        const current = quizData[state.quizCurrent];
+
+        questionText.textContent = `LVL ${state.quizCurrent + 1}: ${current.q}`;
+        optionsContainer.innerHTML = '';
+
+        current.options.forEach((option, index) => {
+            const btn = document.createElement('div');
+            btn.className = 'quiz-opt';
+            btn.textContent = option;
+
+            btn.addEventListener('click', () => {
+                handleAnswer(index);
+            }, { once: true });
+
+            optionsContainer.appendChild(btn);
+        });
+
+        status.textContent = `STAGE ${state.quizCurrent + 1} / ${quizData.length}`;
+    }
+
+    function handleAnswer(selectedIndex) {
+        const current = quizData[state.quizCurrent];
+
+        if (selectedIndex === current.correct) {
+            state.quizScore++;
+        }
+
+        state.quizCurrent++;
+
+        if (state.quizCurrent < quizData.length) {
+            renderQuestion();
+        } else {
+            showResults();
+        }
+    }
+
+    function showResults() {
+        wrapper.style.display = 'none';
+        result.style.display = 'block';
+
+        if (state.quizScore === quizData.length) {
+            title.textContent = "HIGHSCORE! 🏆";
+            msg.textContent = "PERFECT RUN! YOU KNOW EVERYTHING.";
+        } 
+        else if (state.quizScore >= 3) {
+            title.textContent = `SCORE: ${state.quizScore}/${quizData.length}`;
+            msg.textContent = "NOT BAD FOR A ROOKIE.";
+        } 
+        else {
+            title.textContent = "GAME OVER";
+            msg.textContent = "THE DUCKS ARE DISAPPOINTED.";
+        }
+    }
+
+    return { start };
+
+})();
+
+ 
+
+            /* =========================================
+               5. UI CONTROLLER
+               ========================================= */
+            const UI = {
+                initListeners: () => {
+                    // Lock Screen
+                    els.unlockBtn.addEventListener('click', UI.attemptUnlock);
+                    els.passwordInput.addEventListener('keypress', (e) => {
+                        if(e.key === 'Enter') UI.attemptUnlock();
+                    });
+
+                    // Back Button
+                    els.backBtn.addEventListener('click', UI.goBack);
+
+                    // Mute Button
+                    els.muteBtn.addEventListener('click', AudioController.toggleMute);
+
+                    // Menu Navigation
+                    els.menuCards.forEach(card => {
+                        card.addEventListener('click', () => {
+                            UI.navigate(card.dataset.target);
+                        });
+                    });
+
+                    // Quiz Retry
+                    els.retryBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        QuizEngine.start();
+                    });
+                },
+
+                attemptUnlock: () => {
+                    AudioController.init();
+                    state.spamCount++;
+
+                    // Secret Spam Check
+                    if (state.spamCount === 20) {
+                        VisualFX.showSecretSpam();
+                    }
+
+                    const raw = els.passwordInput.value.trim().toLowerCase();
+                    const encoded = encodeURIComponent(raw);
+
+                    if (encoded === config.password) {
+                        AudioController.playUnlock();
+                        els.lockScreen.style.opacity = '0';
+                        els.lockScreen.style.pointerEvents = 'none'; 
+                        
+                        setTimeout(() => {
+                            els.lockScreen.classList.remove('active'); 
+                            els.mainContent.classList.add('active'); 
+                            VisualFX.staggerFade(document.querySelector('.menu-grid'));
+                        }, 500);
+                    } else {
+                        // Critical Fix: No Repeated Errors
+                        let newIndex;
+                        do {
+                            newIndex = Math.floor(Math.random() * errorMessages.length);
+                        } while (newIndex === state.lastErrorIndex && errorMessages.length > 1);
+                        
+                        state.lastErrorIndex = newIndex;
+                        const msg = errorMessages[newIndex];
+                        
+                        els.errorMsg.textContent = msg;
+                        els.errorMsg.classList.add('show');
+                        els.passwordInput.value = "";
+                        VisualFX.shakeLock();
+                    }
+                },
+
+                goBack: () => {
+                    // Hide Main
+                    els.mainContent.classList.remove('active');
+                    
+                    // Show Lock
+                    els.lockScreen.style.opacity = '1';
+                    els.lockScreen.style.pointerEvents = 'all';
+                    els.lockScreen.classList.add('active');
+                    
+                    // Reset input
+                    els.passwordInput.value = "";
+                    els.errorMsg.classList.remove('show');
+                },
+
+                navigate: (sectionId) => {
+                    els.menuCards.forEach(c => c.classList.remove('active'));
+                    document.querySelector(`[data-target="${sectionId}"]`).classList.add('active');
+
+                    els.sections.forEach(s => s.classList.remove('visible'));
+                    
+                    const target = document.getElementById(`section-${sectionId}`);
+                    target.classList.add('visible');
+
+                    if (sectionId === 'letter') {
+                        VisualFX.staggerFade(target.querySelector('.letter-paper'));
+                    } else if (sectionId === 'quiz') {
+                        QuizEngine.start(); // Always clean start
+                    }
+                }
+            };
+
+            /* =========================================
+               6. BOOTSTRAP
+               ========================================= */
+            const init = () => {
+                VisualFX.init();
+                UI.initListeners();
+                AudioController.init(); 
+            };
+
+            return { init };
+
+        })();
+
+        window.onload = DuckWorld.init;
+
+    </script>
+</body>
+</html>
